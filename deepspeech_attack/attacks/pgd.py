@@ -7,7 +7,26 @@ from tqdm import tqdm
 from deepspeech_pytorch.decoder import Decoder, GreedyDecoder
 from deepspeech_pytorch.validation import WordErrorRate
 from deepspeech_pytorch.validation import CharErrorRate
-from deepspeech_attack.attacks.fgsm import fgsm
+
+
+def pgd(inputs, targets, inputs_sizes, target_sizes, model, criterion, device, epsilon=0.1, alpha=1):
+    model.train()
+    inputs = inputs.detach()
+    inputs = inputs.to(device)
+    inputs.requires_grad = True
+    out, output_sizes = model(inputs, inputs_sizes)
+    # decoded_output, _ = decoder.decode(out, output_sizes)
+    out = out.transpose(0, 1)  # TxNxH
+    out = out.log_softmax(-1)
+    model.zero_grad()
+    loss = criterion(out, targets, output_sizes, target_sizes)
+    loss.backward()
+
+    perturbation = alpha * inputs.grad.sign()
+    adv_inputs = inputs + perturbation
+    delta = torch.clamp(adv_inputs - inputs, min=-epsilon, max=epsilon)
+    adv_inputs = torch.clamp(inputs + delta, min=-1, max=10)
+    return adv_inputs, targets, inputs_sizes, target_sizes
 
 
 def pgd_main(test_loader,
@@ -43,7 +62,7 @@ def pgd_main(test_loader,
         inputs_sizes = input_percentages.mul_(int(inputs.size(3))).int()
         adv_inputs = inputs
         for step in range(attack_steps):
-            adv_inputs, targets, inputs_sizes, target_sizes = fgsm(adv_inputs, targets, inputs_sizes,
+            adv_inputs, targets, inputs_sizes, target_sizes = pgd(adv_inputs, targets, inputs_sizes,
                                                                    target_sizes, model, criterion,
                                                                    device, epsilon)
 

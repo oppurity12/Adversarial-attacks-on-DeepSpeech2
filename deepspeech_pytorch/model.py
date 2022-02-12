@@ -69,67 +69,15 @@ class BatchRNN(nn.Module):
     def forward(self, x, output_lengths):
         if self.batch_norm is not None:
             x = self.batch_norm(x)
+        sequence_length = x.size(1)
         x = nn.utils.rnn.pack_padded_sequence(x, output_lengths)
-        x, h = self.rnn(x)
+        h = torch.randn(2, sequence_length, self.hidden_size).to('cuda')
+        x, h = self.rnn(x, h)
+        # x, h = self.rnn(x)
         x, _ = nn.utils.rnn.pad_packed_sequence(x)
         if self.bidirectional:
             x = x.view(x.size(0), x.size(1), 2, -1).sum(2).view(x.size(0), x.size(1), -1)  # (TxNxH*2) -> (TxNxH) by sum
         return x
-
-
-# uni_direction
-class BatchDilatedRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, batch_norm=True):
-        super(BatchDilatedRNN, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
-        self.rnn = DRNN(n_input=input_size, n_hidden=hidden_size, n_layers=1)
-
-    def flatten_parameters(self):
-        self.rnn.flatten_parameters()
-
-    def forward(self, x, output_lengths):
-        if self.batch_norm is not None:
-            x = self.batch_norm(x)
-        # x = nn.utils.rnn.pack_padded_sequence(x, output_lengths)
-        x, h = self.rnn(x)
-        # x, _ = nn.utils.rnn.pad_packed_sequence(x)
-        return x
-
-
-class BatchResidualLstm(nn.Module):
-    def __init__(self, input_size, hidden_size, batch_norm=True):
-        super(BatchResidualLstm, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
-        self.rnn = ResLSTMLayer(input_size=input_size, hidden_size=hidden_size)
-
-    def flatten_parameters(self):
-        self.rnn.flatten_parameters()
-
-    def forward(self, x, output_lengths):
-        if self.batch_norm is not None:
-            x = self.batch_norm(x)
-        batch_size = x.shape[1]
-        # x = nn.utils.rnn.pack_padded_sequence(x, output_lengths)
-        hx, cx = torch.zeros((1, batch_size, self.hidden_size)).cuda(), torch.zeros((1, batch_size, self.hidden_size)).cuda()
-        hidden = (hx, cx)
-        x, h = self.rnn(x, hidden)
-        # x, _ = nn.utils.rnn.pad_packed_sequence(x)
-        return x
-
-
-class BatchResRNN(BatchRNN):
-    def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False, batch_norm=True):
-        super().__init__(input_size=input_size, hidden_size=hidden_size, rnn_type=rnn_type, bidirectional=bidirectional, batch_norm=batch_norm)
-
-    def forward(self, x, output_lengths):
-        out1 = super().forward(x, output_lengths)
-        out2 = super().forward(out1, output_lengths)
-        res = x + out2
-        return res
 
 
 class Lookahead(nn.Module):
@@ -191,31 +139,6 @@ class DeepSpeech(pl.LightningModule):
         conv_lists = {2: [CNN2(), SkipOneStep2(), SkipTwoStep2()], 3: [CNN3(), SkipOneStep3()],
                       4: [CNN4(), SkipOneStep4(), SkipTwoStep4()]}
         self.conv = conv_lists[number_of_layers][self.skip_steps]
-        # self.conv = SkipOneStep2Runge()
-        # self.conv = DenseStep1()
-
-        # self.conv = MaskConv(nn.Sequential(
-        #     nn.Conv2d(1, 32, kernel_size=(41, 11), stride=(2, 2), padding=(20, 5)),
-        #     nn.BatchNorm2d(32),
-        #     nn.Hardtanh(0, 20, inplace=True),
-        #     nn.Conv2d(32, 32, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5)),
-        #     nn.BatchNorm2d(32),
-        #     nn.Hardtanh(0, 20, inplace=True)
-        # ))
-
-        # if self.shortcut:
-        #     self.projection = MaskConv(nn.Sequential(
-        #         nn.Conv2d(1, 32, kernel_size=(1, 1), stride=(4, 2)),
-        #         nn.BatchNorm2d(32),
-        #         nn.Hardtanh(0, 20, inplace=True)
-        #     ))
-
-        # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
-        # rnn_input_size = int(math.floor((self.spect_cfg.sample_rate * self.spect_cfg.window_size) / 2) + 1)
-        # rnn_input_size = int(math.floor(rnn_input_size + 2 * 20 - 41) / 2 + 1)
-        # rnn_input_size = int(math.floor(rnn_input_size + 2 * 10 - 21) / 2 + 1)
-        # rnn_input_size *= 32
-
         rnn_input_size = self.get_rnn_input_size(self.conv.conv)
 
         self.rnns = nn.Sequential(
@@ -235,34 +158,6 @@ class DeepSpeech(pl.LightningModule):
                 ) for x in range(self.model_cfg.hidden_layers - 1)
             )
         )
-
-        # self.rnns = nn.Sequential(
-        #     BatchResidualLstm(
-        #         input_size=rnn_input_size,
-        #         hidden_size=self.model_cfg.hidden_size,
-        #         batch_norm=False
-        #     ),
-        #     *(
-        #         BatchResidualLstm(
-        #             input_size=self.model_cfg.hidden_size,
-        #             hidden_size=self.model_cfg.hidden_size,
-        #         ) for x in range(self.model_cfg.hidden_layers - 1)
-        #     )
-        # )
-
-        # self.rnns = nn.Sequential(
-        #     BatchDilatedRNN(
-        #         input_size=rnn_input_size,
-        #         hidden_size=self.model_cfg.hidden_size,
-        #         batch_norm=False,
-        #     ),
-        #     *(
-        #         BatchDilatedRNN(
-        #             input_size=self.model_cfg.hidden_size,
-        #             hidden_size=self.model_cfg.hidden_size,
-        #         ) for x in range(self.model_cfg.hidden_layers - 1)
-        #     )
-        # )
 
         self.lookahead = nn.Sequential(
             # consider adding batch norm?

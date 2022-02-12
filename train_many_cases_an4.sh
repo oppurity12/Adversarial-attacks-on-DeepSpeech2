@@ -27,3 +27,4 @@ python save.py checkpoint_dir=/home/skku/ML/deepspeech.pytorch/checkpoints4 save
 
 #python train.py +configs=an4 trainer.max_epochs=75 checkpoint.dirpath=/home/skku/ML/deepspeech.pytorch/checkpoints4 checkpoint.filename=epochs75_4conv_bi_1 log_dir_name=epochs75_4conv_bi_1 number_of_layers=4 log_dir_path=/home/skku/ML/deepspeech.pytorch/checkpoints4
 #python train.py +configs=an4 trainer.max_epochs=75 checkpoint.dirpath=/home/skku/ML/deepspeech.pytorch/checkpoints4 checkpoint.filename=epochs75_4conv_bi_skip2_1 log_dir_name=epochs75_4conv_bi_skip2_1 number_of_layers=4 log_dir_path=/home/skku/ML/deepspeech.pytorch/checkpoints4 skip_steps=2
+

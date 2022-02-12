@@ -51,6 +51,7 @@ def fgsm(inputs, targets, inputs_sizes, target_sizes, model, criterion, device, 
 
     perturbation = epsilon * inputs.grad.sign()
     adv_inputs = inputs + perturbation
+    adv_inputs = torch.clamp(adv_inputs, min=-1, max=10)
     return adv_inputs, targets, inputs_sizes, target_sizes
 
 
